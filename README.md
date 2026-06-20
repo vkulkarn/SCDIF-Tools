@@ -5,7 +5,7 @@ Licensed under the MIT License. See LICENSE.txt in the project root.
 -->
 
 # These are tools I'm developing to help work on SCDIF data
-
+Many years ago I was given a very small sample SCDIF dataset. I'm finally getting around to using that dataset along with the publicly available documentation to develop these tools. Since the dataset is very small and not something I can distribute, I've developed a script that will generate arbitrary SCDIF data and a parallel tool to validate that data. The sample dataset did contain some inconsistencies when compared with the specification. I've tried to documnent those inconsistencies in the AI skill. The synthetic data does should be to standard.
 
 ## Folder: [SCDIF Documentation](scdif_documentation)
 This folder contains a couple of tools:
