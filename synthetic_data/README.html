@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<!-- SCDIF Toolkit — Copyright (c) 2026 Vikram Kulkarni · SPDX-License-Identifier: MIT · See LICENSE.txt -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SCDIF Synthetic Data & Validation Tools</title><style>
+:root{--ink:#1f2733;--muted:#5b6675;--line:#dce1e8;--bg:#ffffff;--soft:#f6f8fa;--accent:#2f6fb0}
+*{box-sizing:border-box}
+body{margin:0;background:#eef1f5;color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:980px;margin:32px auto;background:var(--bg);padding:46px 56px;border:1px solid var(--line);
+  border-radius:14px;box-shadow:0 2px 10px rgba(20,30,50,.05)}
+h1{font-size:30px;line-height:1.25;margin:0 0 18px;padding-bottom:14px;border-bottom:2px solid var(--line)}
+h2{font-size:23px;margin:34px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:18px;margin:26px 0 10px}
+h4{font-size:15px;margin:22px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+p{margin:12px 0}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+code{background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:13px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:14px 16px;overflow:auto;line-height:1.45}
+pre code{background:none;border:0;padding:0;font-size:12.5px}
+blockquote{margin:14px 0;padding:6px 16px;border-left:4px solid #cdd6e0;background:#f8fafc;color:#3a4655;border-radius:0 8px 8px 0}
+ul,ol{margin:12px 0;padding-left:26px}li{margin:5px 0}
+hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 11px;text-align:left;vertical-align:top}
+thead th{background:#eef3f9;font-weight:700;white-space:nowrap}
+tbody tr:nth-child(even){background:#fafbfc}
+td code,th code{font-size:12.5px}
+.tag{display:inline-block;font-size:12px;color:var(--muted);margin-top:4px}
+</style></head><body><div class="wrap"><h1>SCDIF Synthetic Data &amp; Validation Tools</h1>
+<p>Two standalone, <strong>pure-standard-library</strong> Python scripts (no <code>pip install</code> needed):</p>
+<table>
+<thead>
+<tr><th>Script</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="generate.py"><code>generate.py</code></a></td><td>Generate a clean, referentially-valid synthetic SCDIF dataset at any scale.</td></tr>
+<tr><td><a href="validate.py"><code>validate.py</code></a></td><td>Validate any SCDIF dataset, print a report, and (on issues) write a Claude-ready <code>validation_report.md</code>.</td></tr>
+</tbody>
+</table>
+<p>Both relate to the SCDIF data model documented in the skill at <code>../scdif_documentation/scdif/</code> (start with <code>SKILL.md</code>).</p>
+<hr>
+<h2><code>generate.py</code> — synthetic data generator</h2>
+<p>Creates a complete SCDIF export: all record types, their satellite records, the <code>8A</code> code table, and real document files — all referentially consistent.</p>
+<h3>Usage</h3>
+<pre><code># Interactive: prompts for the number of people
+python3 generate.py
+
+# Non-interactive: pass the people count as an argument
+python3 generate.py 2000</code></pre>
+<p>It asks (or takes as an argument) <strong>how many people (<code>1A</code>) records</strong> to create. <strong>Minimum is 100.</strong> Everything else scales in the same proportion as the original 500-person specification:</p>
+<table>
+<thead>
+<tr><th>Quantity</th><th>Rule</th><th>At 500 people</th></tr>
+</thead>
+<tbody>
+<tr><td>People (<code>1A</code>)</td><td>your input (min 100)</td><td>500</td></tr>
+<tr><td>Communications (<code>2A</code>) per person</td><td>12–18</td><td>~7,500 total</td></tr>
+<tr><td>Workflows (<code>3A</code>) per person</td><td>2–5</td><td>~1,750 total</td></tr>
+<tr><td>Households (<code>5A</code>)</td><td>people ÷ 10</td><td>50</td></tr>
+<tr><td>Doc-library items (<code>6A</code>)</td><td>people ÷ 10</td><td>50</td></tr>
+<tr><td>Events (<code>7A</code>)</td><td>people ÷ 10</td><td>50</td></tr>
+<tr><td>Recurring series (<code>7H</code>)</td><td>people ÷ 50</td><td>10</td></tr>
+</tbody>
+</table>
+<p>Rough size: <strong>~96 records and ~8 document files per person</strong> (e.g. 2,000 people → ~190k records, ~16k files), generated in a few seconds. The run is <strong>seeded</strong>, so the same count always produces the same dataset.</p>
+<h3>Output</h3>
+<p>Written beside the script (any previous output is cleared first, so changing scale never leaves stale files):</p>
+<pre><code>synthetic_data/
+├── data/                     # one TAB-delimited, CRLF file per record type
+│   ├── out_1a.dat … out_7n.dat
+│   └── out_8A.dat
+└── documents/                # real files referenced by path in the data
+    ├── formletters/          # 6A form-letter library (.docx)
+    ├── objects/              # incoming docs &amp; attachments (.pdf/.txt/.docx)
+    ├── imail/                # incoming email (.txt)
+    ├── indivletters/         # individual outgoing letters (.docx)
+    └── fomletter_ima/        # form-letter images/attachments</code></pre>
+<h3>What it guarantees</h3>
+<ul><li>Every record padded to its <strong>documented field count</strong>; records end with <strong>CRLF</strong>.</li><li><strong>Referential integrity:</strong> every Person / Communication / Workflow / Household / Document / Event / Recurrence ID resolves; every staff <code>User ID</code> and every code resolves to an <code>8A</code> record; <code>3L</code> Workflow Type matches its <code>3A</code>.</li><li>Document path references all point to files that exist on disk.</li><li>Some people are intentionally <strong>not</strong> in any household (as requested).</li><li>Document files are copies of one in-memory template per type, whose content is literally <code>Test document &lt;ext&gt;</code> — reused under many file names.</li></ul>
+<h3>Customizing</h3>
+<p>Distributions and pools live as constants near the top of <code>generate.py</code> (name lists, code pools, workflow types, per-person ranges). Edit and re-run.</p>
+<hr>
+<h2><code>validate.py</code> — dataset validator &amp; diagnostic reporter</h2>
+<p>Checks any SCDIF dataset against the documented format and reports problems — including the real-world quirks catalogued during skill development.</p>
+<h3>Usage</h3>
+<pre><code># Validate the generated synthetic data (default)
+python3 validate.py
+
+# Validate any other SCDIF export by pointing at its data folder
+python3 validate.py ../sample_scdif_data/data</code></pre>
+<p><code>DATA_DIR</code> defaults to the <code>data/</code> folder beside the script. The matching <code>documents/</code> folder is expected as its sibling (for path-resolution checks).</p>
+<h3>Output</h3>
+<ol><li><strong>Console:</strong> a per-record-type summary (counts, observed vs documented field widths) and a result line: <code>clean</code> or <code>N ERROR(s), M WARNING(s)</code>.</li><li><strong><code>validation_report.md</code></strong> — written next to the data folder <strong>only when issues are found</strong> (a stale report is removed when the data is clean). It is structured for an AI assistant: each finding includes severity, what/why, the SCDIF rule, <strong>file:line evidence</strong>, a suggested fix, and a ready-to-paste prompt for Claude.</li></ol>
+<p><strong>Exit code:</strong> <code>1</code> if any ERROR-level issues are found, otherwise <code>0</code> (useful in CI).</p>
+<h3>What it checks</h3>
+<ul><li><strong>Structure:</strong> stray/blank/non-record lines, wrong record type inside a file, non-CRLF line endings, records over the 32K limit.</li><li><strong>Field counts:</strong> records with more fields than documented (undocumented trailing fields) and varying widths (trailing-field trimming).</li><li><strong>Uniqueness:</strong> duplicate "unique" IDs (Person, Communication, Workflow, Household, Document, Event, Recurrence).</li><li><strong>Referential integrity:</strong> orphaned foreign keys, staff <code>User ID</code>s and codes missing from <code>8A</code>.</li><li><strong>Field-order anomalies:</strong> <code>6C</code> Code Type / Code columns swapped.</li><li><strong>Code tables:</strong> undocumented <code>8A</code> code types.</li><li><strong>Document paths:</strong> unresolved references, <strong>with systematic-pattern detection</strong> — e.g. <em>"removing the <code>BlobExport</code> path segment resolves 11 of 12,"</em> or a folder-name typo (<code>formletter_ima</code> vs on-disk <code>fomletter_ima</code>).</li></ul>
+<h3>Working through a report with Claude</h3>
+<pre><code>python3 validate.py ../some_export/data        # writes ../some_export/validation_report.md</code></pre>
+<p>Then ask Claude:</p>
+<blockquote><p>Read <code>some_export/validation_report.md</code>, then look at the data and help me fix these issues.</p></blockquote>
+<p>Each finding's <strong>"Ask Claude"</strong> line is a starting prompt for that specific issue.</p>
+<hr>
+<h2>Typical workflow</h2>
+<pre><code># 1. Generate a dataset
+python3 generate.py 1000
+
+# 2. Validate it (synthetic data should be clean)
+python3 validate.py
+
+# 3. Validate a real export to surface its issues
+python3 validate.py ../sample_scdif_data/data
+#    -&gt; writes ../sample_scdif_data/validation_report.md if problems are found</code></pre>
+<blockquote><p>Note: running <code>validate.py</code> against a dataset writes its report <strong>next to that dataset's <code>data/</code> folder</strong>. Avoid pointing it at a read-only/reference dataset you must not modify, or move the report afterward.</p></blockquote><footer style="margin-top:28px;padding-top:14px;border-top:1px solid #dce1e8;color:#5b6675;font-size:13px">Copyright © 2026 Vikram Kulkarni · Licensed under the MIT License.</footer></div></body></html>

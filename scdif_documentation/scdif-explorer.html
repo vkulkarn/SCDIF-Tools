@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<!-- SCDIF Toolkit — Copyright (c) 2026 Vikram Kulkarni · SPDX-License-Identifier: MIT · See LICENSE.txt -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCDIF Data Model Explorer</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1f2733; --muted:#5b6675;
+  --line:#d8dee7; --accent:#3b6fb0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+#app{position:fixed;inset:0;overflow:hidden;cursor:grab;
+  background-image:radial-gradient(#e3e8ef 1px, transparent 1px);background-size:26px 26px;background-color:var(--bg)}
+#app.panning{cursor:grabbing}
+#canvas{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#canvas.animate{transition:transform .45s cubic-bezier(.22,.61,.36,1)}
+#edges{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5}
+#regions{position:absolute;left:0;top:0;z-index:1}
+#tables{position:absolute;left:0;top:0;z-index:10}
+
+.region{position:absolute;border-radius:18px;border:1.5px dashed;}
+.region-title{position:absolute;left:18px;top:8px;font-weight:800;letter-spacing:.3px;
+  font-size:30px;opacity:.85;user-select:none}
+.region-sub{position:absolute;left:18px;top:42px;font-size:13px;opacity:.6;font-weight:600;user-select:none}
+
+.table{position:absolute;width:240px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;box-shadow:0 1px 3px rgba(20,30,50,.06),0 6px 18px rgba(20,30,50,.05);
+  overflow:hidden;transition:opacity .25s, box-shadow .2s, transform .2s}
+.thead{height:36px;display:flex;align-items:center;gap:8px;padding:0 10px;cursor:pointer;
+  color:#fff;font-weight:700;user-select:none}
+.thead .code{font-size:13px;font-weight:800;background:rgba(255,255,255,.22);
+  padding:2px 7px;border-radius:6px;letter-spacing:.5px}
+.thead .nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fields{list-style:none;margin:0;padding:0}
+.field{height:22px;display:flex;align-items:center;gap:7px;padding:0 10px;font-size:11.5px;
+  border-top:1px solid #eef1f5;cursor:pointer;color:#2b3543}
+.field:hover{background:#eef5ff}
+.field .fno{color:#9aa6b4;font-variant-numeric:tabular-nums;min-width:15px;text-align:right;font-size:10.5px}
+.field .fnm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field.active{background:#dcebff;}
+
+#app.has-sel .table:not(.sel):not(.conn){opacity:.22}
+.table.sel{box-shadow:0 0 0 3px rgba(59,111,176,.55),0 10px 26px rgba(20,30,50,.18);transform:translateZ(0) scale(1.015)}
+.table.conn{box-shadow:0 0 0 2px rgba(40,52,70,.28),0 8px 20px rgba(20,30,50,.12)}
+
+.edge{fill:none;stroke-width:2.25;opacity:.95;stroke-linejoin:round;stroke-linecap:round}
+.edge.staff{stroke-dasharray:5 5;opacity:.72;stroke-width:1.8}
+.elabel{font-size:11px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-linejoin:round}
+.elabel-bg{}
+
+/* toolbar */
+#toolbar{position:fixed;top:14px;left:14px;z-index:50;display:flex;gap:8px;align-items:center;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:7px 9px;
+  box-shadow:0 4px 16px rgba(20,30,50,.08)}
+#toolbar button{font:inherit;font-size:13px;font-weight:600;color:var(--ink);background:#fff;
+  border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+#toolbar button:hover{background:#f0f4fa;border-color:#bcc7d6}
+#toolbar .title{font-weight:800;font-size:14px;margin-right:4px;padding:0 4px}
+#search{font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:190px}
+
+/* panel */
+#panel{position:fixed;top:14px;right:14px;bottom:14px;width:340px;z-index:50;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 6px 26px rgba(20,30,50,.12);display:flex;flex-direction:column;overflow:hidden}
+#panel .phead{padding:14px 16px;border-bottom:1px solid var(--line)}
+#panel .ptag{display:inline-block;font-size:11px;font-weight:800;color:#fff;padding:3px 9px;border-radius:7px;letter-spacing:.4px}
+#panel h2{margin:9px 0 2px;font-size:17px}
+#panel .pcat{font-size:12px;font-weight:700;color:var(--muted)}
+#panel .pbody{padding:14px 16px;overflow:auto;flex:1;font-size:13px;line-height:1.5}
+#panel .mut{color:var(--muted)}
+.section-t{font-size:11px;font-weight:800;letter-spacing:.6px;color:#8a95a4;text-transform:uppercase;margin:16px 0 7px}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;margin:0 5px 5px 0;border:1px solid}
+.b-date{background:#eef6ff;border-color:#cfe3fb;color:#2b6cb0}
+.b-time{background:#eef6ff;border-color:#cfe3fb;color:#2b6cb0}
+.b-fk{background:#eefaf0;border-color:#cdeed3;color:#2f8f5b}
+.b-null{background:#f4f5f7;border-color:#dfe3ea;color:#5b6675}
+.b-flag{background:#fff5e9;border-color:#f6e0c0;color:#b9772a}
+.b-open{background:#fdeef3;border-color:#f7cfdd;color:#bf3f6e}
+.b-key{background:#f1eefb;border-color:#ddd2f4;color:#6f4fb0}
+.b-enum{background:#eef9f9;border-color:#cdeaea;color:#2f8f8f}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  background:#f3f6fa;border:1px solid var(--line);border-radius:20px;padding:5px 11px;margin:0 6px 7px 0;cursor:pointer}
+.chip:hover{background:#e9f0f8;border-color:#bcc7d6}
+.chip .dot{width:9px;height:9px;border-radius:50%}
+.chip .k{color:var(--muted);font-weight:600}
+.fielddef{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:4px}
+.backlink{font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;user-select:none}
+.note{background:#fff7ed;border:1px solid #f6e0c0;border-radius:9px;padding:9px 11px;margin-top:8px;font-size:12px;color:#8a5a1c}
+#legend{position:fixed;left:14px;bottom:14px;z-index:50;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px;box-shadow:0 4px 16px rgba(20,30,50,.08);max-width:300px}
+#legend .lt{font-size:11px;font-weight:800;letter-spacing:.5px;color:#8a95a4;text-transform:uppercase;margin-bottom:7px}
+.leg{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:0 10px 6px 0;cursor:pointer}
+.leg .sw{width:13px;height:13px;border-radius:4px}
+.leg:hover{text-decoration:underline}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+.kbd{font:inherit;font-size:11px;background:#f0f3f7;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas">
+    <svg id="edges"></svg>
+    <div id="regions"></div>
+    <div id="tables"></div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <span class="title">SCDIF Explorer</span>
+  <button id="btn-fit">Overview</button>
+  <button id="btn-zin">+</button>
+  <button id="btn-zout">−</button>
+  <input id="search" list="reclist" placeholder="Jump to record (e.g. 3A, household)…">
+  <datalist id="reclist"></datalist>
+</div>
+
+<div id="panel">
+  <div class="phead" id="phead"></div>
+  <div class="pbody" id="pbody"></div>
+</div>
+
+<div id="legend">
+  <div class="lt">Categories · click to focus</div>
+  <div id="legrows"></div>
+  <div class="hint">Drag to pan · scroll to zoom · click a <b>table</b> to see its links · click a <b>field</b> for its definition.</div>
+  <div style="font-size:11px;color:#8a95a4;margin-top:6px">© 2026 Vikram Kulkarni · MIT License</div>
+</div>
+
+<script>const DATA = {"categories": {"1": {"name": "Person Data", "head": "#3b6fb0"}, "2": {"name": "Communication Data", "head": "#2f8f5b"}, "3": {"name": "Workflow Data", "head": "#c47d2c"}, "5": {"name": "Household Data", "head": "#7d5bb0"}, "6": {"name": "Form Letter / Document Library", "head": "#2f9b9b"}, "7": {"name": "Schedule Data", "head": "#c0507f"}, "8": {"name": "Code Tables", "head": "#5b6470"}}, "records": [{"code": "1A", "name": "Name Data", "cat": "1", "mult": "one per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1A"}, {"no": 2, "name": "Person ID", "meaning": "Unique ID identifying the person. The key referenced by all other person records."}, {"no": 3, "name": "Person Type", "meaning": "Code for the kind of person — see Person Type Values."}, {"no": 4, "name": "Prefix", "meaning": "e.g. \"Mr.\", \"Mrs.\", \"The Honorable\"."}, {"no": 5, "name": "First Name", "meaning": ""}, {"no": 6, "name": "Middle Name", "meaning": "Middle name or initial."}, {"no": 7, "name": "Last Name", "meaning": ""}, {"no": 8, "name": "Suffix", "meaning": "e.g. \"Jr.\""}, {"no": 9, "name": "Appellation", "meaning": "e.g. \"MD\"."}, {"no": 10, "name": "Organization Name", "meaning": "Used if the record is for an organization, not an individual."}, {"no": 11, "name": "Salutation", "meaning": "Preferred salutation, e.g. \"Bob\" or \"Senator Jones\"."}, {"no": 12, "name": "Date of Birth", "meaning": "YYYYMMDD."}, {"no": 13, "name": "No Mail Flag", "meaning": "\"Y\" if the person has requested no mail to any of their addresses."}, {"no": 14, "name": "Deceased Flag", "meaning": "\"Y\" if the person is deceased."}, {"no": 15, "name": "Spouse's Name", "meaning": ""}, {"no": 16, "name": "Email Flag", "meaning": "\"Y\" if the person's preferred communication method is email."}]}, {"code": "1B", "name": "Address Data", "cat": "1", "mult": "multiple per person, one per address", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1B"}, {"no": 2, "name": "Person ID", "meaning": "Must match the Person ID of the associated 1A."}, {"no": 3, "name": "Address ID", "meaning": "Numeric ID/sequence identifying this address."}, {"no": 4, "name": "Address Type", "meaning": "Code for the address kind — see Address Type Values."}, {"no": 5, "name": "Primary Flag", "meaning": "\"Y\" if this is the primary address of this type."}, {"no": 6, "name": "Default Address Flag", "meaning": "\"Y\" if this is the person's default mailing address."}, {"no": 7, "name": "Title", "meaning": "Title tied to an org/business address, e.g. \"CEO\"."}, {"no": 8, "name": "Organization Name", "meaning": "Org/business name when a person's business address."}, {"no": 13, "name": "City", "meaning": ""}, {"no": 14, "name": "State Code", "meaning": "2-letter, e.g. \"VA\", \"DC\", \"MD\"."}, {"no": 15, "name": "Zip Code", "meaning": "XXXXX-XXXX (9-digit) or XXXXX (5-digit); for international, the country's zip."}, {"no": 16, "name": "Carrier Route", "meaning": ""}, {"no": 17, "name": "County", "meaning": ""}, {"no": 18, "name": "Country", "meaning": "For international addresses."}, {"no": 19, "name": "District", "meaning": "Congressional district."}, {"no": 20, "name": "Precinct", "meaning": ""}, {"no": 21, "name": "No Mail Flag", "meaning": "\"Y\" if no mail should go to this address."}, {"no": 22, "name": "Deliverability", "meaning": "\"U\" undeliverable, \"D\" deliverable, \"P\" possibly deliverable, NULL = not verified."}]}, {"code": "1C", "name": "Person Codes", "cat": "1", "mult": "multiple per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1C"}, {"no": 2, "name": "Person ID", "meaning": "Should match the associated 1A."}, {"no": 3, "name": "Person Code Type", "meaning": "Type of code in field 4 — see Person Code Type Values (PERS, WORK). The same type may repeat."}, {"no": 4, "name": "Code", "meaning": "A code describing the person/agency. Must have a matching 8A record for this person/workflow code."}]}, {"code": "1D", "name": "Person Text (Comments or Notes)", "cat": "1", "mult": "multiple per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1D"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "1D Sequence Number", "meaning": "Orders the 1D records for a person. Required if Date (5) and Time (6) are NULL."}, {"no": 4, "name": "Text", "meaning": "Freeform comments/notes about the person."}, {"no": 5, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 6, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 7, "name": "User ID", "meaning": "Staffer who entered the text. Must have a matching 8A staff record."}]}, {"code": "1E", "name": "Person Phone/Email", "cat": "1", "mult": "multiple per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1E"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Person Phone or Email Type", "meaning": "Type code — see Person Phone/Email Type Values. May repeat."}, {"no": 4, "name": "Phone Number, Email, or URL", "meaning": "The value."}, {"no": 5, "name": "Primary Flag", "meaning": "\"Y\" if primary for this type."}, {"no": 6, "name": "Invalid Flag", "meaning": "\"Y\" if marked invalid/undeliverable."}]}, {"code": "1F", "name": "Person Attachments", "cat": "1", "mult": "multiple per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1F"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Document Name", "meaning": "For files not in the document library: the path-qualified file location."}, {"no": 4, "name": "Document ID", "meaning": "For files in the library: must match a 6A Document ID."}, {"no": 5, "name": "User ID", "meaning": "Staffer who attached it. Must have a matching 8A staff record."}, {"no": 6, "name": "Attached Date", "meaning": "YYYYMMDD."}, {"no": 7, "name": "Text", "meaning": "Comments/notes about the attachment."}, {"no": 8, "name": "File name", "meaning": "User-readable file name."}]}, {"code": "1G", "name": "People Demographics", "cat": "1", "mult": "per constituent", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1G"}, {"no": 2, "name": "Constituent ID", "meaning": "Should match the associated 1A's Person ID."}, {"no": 3, "name": "Provider", "meaning": "The data provider."}, {"no": 4, "name": "Provider ID", "meaning": "Unique ID from the data provider."}, {"no": 5, "name": "Voter ID", "meaning": "State Voter ID."}, {"no": 6, "name": "Last Updated", "meaning": "Date record last updated."}, {"no": 7, "name": "Regis Date", "meaning": "Voter registration date."}, {"no": 8, "name": "Absentee Voter", "meaning": "\"Y\" if absentee voter."}, {"no": 9, "name": "Marital Status", "meaning": "Single / Non-Tradit / Married."}, {"no": 10, "name": "Have Child", "meaning": "Y/N."}, {"no": 11, "name": "Home Owner", "meaning": "Y/N."}, {"no": 12, "name": "Business Owner", "meaning": "Y/N."}, {"no": 13, "name": "Race", "meaning": ""}, {"no": 14, "name": "Ethnicity", "meaning": ""}, {"no": 15, "name": "Language", "meaning": "Primary language spoken."}, {"no": 16, "name": "Education", "meaning": "Number of years of education."}, {"no": 17, "name": "School Dist", "meaning": ""}, {"no": 18, "name": "State House Dist", "meaning": ""}, {"no": 19, "name": "State Senate Dist", "meaning": ""}, {"no": 20, "name": "Ward", "meaning": ""}, {"no": 21, "name": "Township", "meaning": ""}, {"no": 22, "name": "Borough", "meaning": ""}, {"no": 23, "name": "Precinct", "meaning": ""}, {"no": 24, "name": "Birthyear", "meaning": ""}]}, {"code": "1H", "name": "People Vote History", "cat": "1", "mult": "multiple per constituent", "desc": "A communication is any contact between a person and the office (a constituent's phone call, an outgoing mailing, etc.). Workflow \"action history\" is not here — that lives in 3D.", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "1H"}, {"no": 2, "name": "Constituent ID", "meaning": "Should match the associated 1A."}, {"no": 3, "name": "Election Year", "meaning": "Year the constituent voted."}, {"no": 4, "name": "Election Type", "meaning": "P, G, or PP."}]}, {"code": "2A", "name": "Communication Data", "cat": "2", "mult": "multiple per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "2A"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Communication ID", "meaning": "Unique ID for the communication."}, {"no": 4, "name": "Workflow ID", "meaning": "Matches a 3A Workflow ID; NULL if not tied to a workflow."}, {"no": 5, "name": "Workflow Person ID", "meaning": "Matches the 3A's Person ID; NULL if not tied to a workflow."}, {"no": 6, "name": "Communication Type", "meaning": "Type/method, e.g. \"LETTER\", \"EMAIL\", \"PHONE\", \"NEWSLETTER\", \"POST CARD\", \"VISIT\", \"DMAIL\", \"NONE\". Non-exhaustive — examples only, no closed list."}, {"no": 7, "name": "User ID", "meaning": "Staffer who handled it. Must have a matching 8A staff record."}, {"no": 8, "name": "Approved By", "meaning": "Approving staffer's User ID; NULL if no approval required/granted. 8A staff record."}, {"no": 9, "name": "Status", "meaning": "Communication status — all possible values documented; see Communication Status Values."}, {"no": 10, "name": "Date In", "meaning": "Received date YYYYMMDD."}, {"no": 11, "name": "Date Out", "meaning": "Completed date YYYYMMDD."}, {"no": 12, "name": "Reminder date", "meaning": "YYYYMMDD."}, {"no": 13, "name": "Update Date", "meaning": "Last-updated date YYYYMMDD."}, {"no": 14, "name": "Response Type", "meaning": "Reply method, e.g. \"LETTER\", \"EMAIL\". Non-exhaustive — examples only, no closed list."}, {"no": 15, "name": "Address ID", "meaning": "Matches the 1B Address ID the communication was sent to."}, {"no": 16, "name": "Email Address", "meaning": "Email it was sent to."}, {"no": 17, "name": "Household Flag", "meaning": "\"Y\" if sent to a household (then a 5B must define members)."}, {"no": 18, "name": "Household ID", "meaning": "The 5A household; must have a matching 5A."}, {"no": 19, "name": "Group Name", "meaning": "The group/batch this communication is part of."}, {"no": 20, "name": "Salutation", "meaning": "Salutation used."}, {"no": 21, "name": "Subject - Undocumented", "meaning": "Subject/description of the communication."}]}, {"code": "2B", "name": "Communication Codes", "cat": "2", "mult": "multiple per communication", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "2B"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Communication ID", "meaning": "Must match the associated 2A."}, {"no": 4, "name": "Communication Code", "meaning": "Subject/interest code (e.g. \"TAXES\", \"GUNCTRL\"). Must have a matching 8A."}, {"no": 5, "name": "Position", "meaning": "Constituent's position on the subject, e.g. \"PRO\", \"CON\", \"NEUTRAL\", \"NONE\". Non-exhaustive — examples only, no closed list."}]}, {"code": "2C", "name": "Communication Documents", "cat": "2", "mult": "multiple per communication", "desc": "", "notes": ["Observed deviation: in some exports, an incoming document's file name", "appears in field 7 (File Location) with field 8 (File Name) omitted/trimmed,", "rather than in field 8 as documented. When reading 2C, allow for the file", "name to surface in either field 7 or field 8."], "fields": [{"no": 1, "name": "Record Type", "meaning": "2C"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Communication ID", "meaning": "Must match the associated 2A."}, {"no": 4, "name": "Document Type", "meaning": "INCOMING / OUTGOING / AT_INn / AT_OUTn — see Document Type Values."}, {"no": 5, "name": "Communication Document Name", "meaning": "Path-qualified file name; NULL if the doc is in the library (then use field 6)."}, {"no": 6, "name": "Communication Document ID", "meaning": "Matches a 6A Document ID; NULL if not in the library (then use field 5)."}, {"no": 7, "name": "File Location", "meaning": "Physical hardcopy location (e.g. file-cabinet location of the original)."}, {"no": 8, "name": "File Name", "meaning": "User-readable file name."}]}, {"code": "2D", "name": "Communication Text (Comments or Notes)", "cat": "2", "mult": "multiple per communication", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "2D"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Communication ID", "meaning": "Must match the associated 2A."}, {"no": 4, "name": "2D Sequence Number", "meaning": "Orders 2D records; required if Date (6) and Time (7) are NULL."}, {"no": 5, "name": "Text", "meaning": "Freeform comments/notes about the communication."}, {"no": 6, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 7, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 8, "name": "User ID", "meaning": "Staffer who entered it. 8A staff record."}]}, {"code": "2E", "name": "Communication Fill-in Data", "cat": "2", "mult": "multiple per communication, one per fill-in field", "desc": "User-defined fill-in (variable text insert) values used in a letter sent to a person. May be stored in the letter itself or here. Office business processes not defined elsewhere: casework (constituent requests for help with a federal agency), flag requests, tour requests, etc. (There is no 3C.)", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "2E"}, {"no": 2, "name": "Person ID", "meaning": "Must match the associated 1A."}, {"no": 3, "name": "Communication ID", "meaning": "Must match the associated 2A."}, {"no": 4, "name": "Fill-in Field Name", "meaning": "Name of the fill-in field as it appears in the document."}, {"no": 5, "name": "Fill-in Data", "meaning": "Text inserted in place of the fill-in field."}]}, {"code": "3A", "name": "Workflow Data", "cat": "3", "mult": "multiple per person", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3A"}, {"no": 2, "name": "Person ID", "meaning": "The person the workflow is about; matches 1A. NULL if no person is associated."}, {"no": 3, "name": "Workflow ID", "meaning": "Unique ID for the workflow."}, {"no": 4, "name": "Workflow Type", "meaning": "Code for the process — see Workflow Type Values."}, {"no": 5, "name": "User ID", "meaning": "Staffer who handled it. 8A staff record."}, {"no": 6, "name": "Start Date", "meaning": "Initiated YYYYMMDD."}, {"no": 7, "name": "End Date", "meaning": "Completed YYYYMMDD."}, {"no": 8, "name": "Reminder date", "meaning": "YYYYMMDD."}, {"no": 9, "name": "Update Date", "meaning": "Last-updated YYYYMMDD."}, {"no": 10, "name": "Workflow Description", "meaning": "Freeform, e.g. \"Veteran benefits inquiry\"."}, {"no": 11, "name": "Status", "meaning": "Workflow status — all possible values documented; see Workflow Status Values (carries Closed-Flag meaning)."}]}, {"code": "3B", "name": "Workflow Codes", "cat": "3", "mult": "multiple per workflow", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3B"}, {"no": 2, "name": "Person ID", "meaning": "Matches 3A's Person ID; NULL if none."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches the associated 3A."}, {"no": 4, "name": "Workflow Code", "meaning": "e.g. \"VET\", \"SOCSEC\", \"RAILROAD RETIREMENT\", \"IMMIGRATION\". Must have a matching 8A."}]}, {"code": "3D", "name": "Workflow Text (Comments/Notes) / Action Histories", "cat": "3", "mult": "multiple per workflow", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3D"}, {"no": 2, "name": "Person ID", "meaning": "Matches 3A's Person ID; NULL if none."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches the associated 3A."}, {"no": 4, "name": "3D Sequence Number", "meaning": "Orders 3D records; required if Date (6) and Time (7) are NULL."}, {"no": 5, "name": "Text", "meaning": "Freeform comments/notes, or action-history detail about the workflow."}, {"no": 6, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 7, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 8, "name": "User ID", "meaning": "Staffer who entered it. 8A staff record."}]}, {"code": "3E", "name": "Workflow Parties", "cat": "3", "mult": "multiple per workflow", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3E"}, {"no": 2, "name": "Person ID", "meaning": "The person the workflow is about; matches 3A. NULL if none."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches the associated 3A."}, {"no": 4, "name": "Party ID", "meaning": "Person ID of a party (incl. agencies) interested in the workflow. Must have a matching 1A."}, {"no": 5, "name": "Role", "meaning": "Function/role the party/person serves in the workflow."}]}, {"code": "3F", "name": "Workflow Attachments", "cat": "3", "mult": "multiple per workflow", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3F"}, {"no": 2, "name": "Person ID", "meaning": "Matches 3A's Person ID; NULL if none."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches the associated 3A."}, {"no": 4, "name": "Document Name", "meaning": "For files not in the library: path-qualified location."}, {"no": 5, "name": "Document ID", "meaning": "For files in the library: matches a 6A Document ID."}, {"no": 6, "name": "User ID", "meaning": "Staffer who attached it. 8A staff record."}, {"no": 7, "name": "Attached Date", "meaning": "YYYYMMDD."}, {"no": 8, "name": "Text", "meaning": "Comments/notes about the attachment."}, {"no": 9, "name": "File Name", "meaning": "User-readable file name."}]}, {"code": "3G", "name": "Casework Relationship", "cat": "3", "mult": "multiple per case", "desc": "Links one casework record to another (parent/child cases).", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3G"}, {"no": 2, "name": "Constituent ID", "meaning": "The constituent the case was opened for; matches 1A."}, {"no": 3, "name": "Casework ID", "meaning": "Matches the associated 3A's (casework) Workflow ID."}, {"no": 4, "name": "Parent Casework ID", "meaning": "The parent case's 3A Workflow ID."}, {"no": 5, "name": "Create Date", "meaning": "YYYYMMDD."}]}, {"code": "3L", "name": "Additional Workflow Data", "cat": "3", "mult": "multiple per workflow", "desc": "A continuation of 3A used to transmit workflow-type-specific fields (both out-of-the-box and custom/user-defined). One 3L per extra field. See additional-requirements.md for the documented field sets per workflow type.", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "3L"}, {"no": 2, "name": "Person ID", "meaning": "Matches 3A's Person ID; NULL if none."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches the associated 3A."}, {"no": 4, "name": "Workflow Type", "meaning": "Must match the 3A's Workflow Type for this workflow."}, {"no": 5, "name": "Field Name", "meaning": "Name of the additional field."}, {"no": 6, "name": "Field Value", "meaning": "Value of the additional field."}]}, {"code": "5A", "name": "Household Name Data", "cat": "5", "mult": "one per household", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "5A"}, {"no": 2, "name": "Household ID", "meaning": "Unique ID for the household."}, {"no": 3, "name": "Household Name", "meaning": "e.g. \"The Smith Family\"."}, {"no": 4, "name": "Household Salutation", "meaning": "e.g. \"Smith Family\"."}]}, {"code": "5B", "name": "Household Member Data", "cat": "5", "mult": "multiple per household, one per member", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "5B"}, {"no": 2, "name": "Household ID", "meaning": "Matches the associated 5A."}, {"no": 3, "name": "Person ID", "meaning": "A member; must have a matching 1A."}, {"no": 4, "name": "Primary Contact Flag", "meaning": "\"Y\" if head of household / primary contact."}]}, {"code": "5C", "name": "Household Attachments", "cat": "5", "mult": "multiple per household", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "5C"}, {"no": 2, "name": "Household ID", "meaning": "Matches the associated 5A."}, {"no": 3, "name": "Document Name", "meaning": "For files not in the library: path-qualified location."}, {"no": 4, "name": "Document ID", "meaning": "For files in the library: matches a 6A Document ID."}, {"no": 5, "name": "User ID", "meaning": "Staffer who attached it. 8A staff record."}, {"no": 6, "name": "Attached Date", "meaning": "YYYYMMDD."}, {"no": 7, "name": "Text", "meaning": "Comments/notes."}, {"no": 8, "name": "File Name", "meaning": "User-readable file name."}]}, {"code": "5D", "name": "Household Text (Comments or Notes)", "cat": "5", "mult": "multiple per household", "desc": "The office's library of reusable form letters and documents (typically with metadata). Incoming email, incoming correspondence images, and ad-hoc outgoing mail are not part of the library.", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "5D"}, {"no": 2, "name": "Household ID", "meaning": "Matches the associated 5A."}, {"no": 3, "name": "5D Sequence Number", "meaning": "Orders 5D records; required if Date (5) and Time (6) are NULL."}, {"no": 4, "name": "Text", "meaning": "Freeform comments/notes."}, {"no": 5, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 6, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 7, "name": "User ID", "meaning": "Staffer who entered it. 8A staff record."}]}, {"code": "6A", "name": "Form Letter / Document Library Data", "cat": "6", "mult": "one per document version", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "6A"}, {"no": 2, "name": "Document ID", "meaning": "Unique ID for this form letter/document. The key referenced by all other 6x records and by attachment fields elsewhere."}, {"no": 3, "name": "Version", "meaning": "Version of the document (e.g. 1, 2, 3)."}, {"no": 4, "name": "Document Grouping ID", "meaning": "Links multiple versions of the same document."}, {"no": 5, "name": "Document Type", "meaning": "The type of document/file."}, {"no": 6, "name": "Document Display Name", "meaning": "Name the user sees. Required for all 6A."}, {"no": 7, "name": "Document Description", "meaning": "Freeform description."}, {"no": 8, "name": "Document Name", "meaning": "Path-qualified file name of this version, e.g. /docs/newsltrs/oct99nl.doc."}, {"no": 9, "name": "Created By", "meaning": "Staffer who created this version. 8A staff record."}, {"no": 10, "name": "Revised By", "meaning": "Staffer who last revised it. 8A staff record."}, {"no": 11, "name": "Approved By", "meaning": "Approving staffer; NULL if no approval required/granted. 8A staff record."}, {"no": 12, "name": "Creation Date", "meaning": "YYYYMMDD."}, {"no": 13, "name": "Revision Date", "meaning": "Last revision YYYYMMDD."}, {"no": 14, "name": "Last Used Date", "meaning": "Last used/assigned YYYYMMDD."}, {"no": 15, "name": "Status", "meaning": "e.g. Draft, Approved. Non-exhaustive — examples only, no closed list."}, {"no": 16, "name": "Inactive Flag", "meaning": "\"Y\" if this version is inactive (used before, but content now out of date)."}, {"no": 17, "name": "Virtual Directory", "meaning": "The directory path the user sees, e.g. \\FY16 Appropriation Requests\\Education\\."}]}, {"code": "6B", "name": "Form Letter / Document Library Fill-in Data", "cat": "6", "mult": "multiple per document, one per fill-in", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "6B"}, {"no": 2, "name": "Document ID", "meaning": "Matches the associated 6A."}, {"no": 3, "name": "Fill-in Field Name", "meaning": "Name of the fill-in field as it appears in the document."}]}, {"code": "6C", "name": "Form Letter / Document Library Code Data", "cat": "6", "mult": "multiple per document", "desc": "Associates a document with workflow, communication, or document codes.", "notes": ["Observed deviation: some exports populate these two columns in the reverse", "order — the Code in field 3 and the Code Type in field 4 (e.g.", "OUTREACH | COM instead of COM | OUTREACH). When reading 6C, determine", "which column is which by checking which value is a known Code Type rather than", "trusting position."], "fields": [{"no": 1, "name": "Record Type", "meaning": "6C"}, {"no": 2, "name": "Document ID", "meaning": "Matches the associated 6A."}, {"no": 3, "name": "Code Type", "meaning": "WORK / COM / DOC — see Code Type Values."}, {"no": 4, "name": "Code", "meaning": "The code. Must have a matching 8A."}]}, {"code": "6D", "name": "Form Letter / Document Library Attachments", "cat": "6", "mult": "multiple per document", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "6D"}, {"no": 2, "name": "Document ID", "meaning": "Matches the associated 6A."}, {"no": 3, "name": "Document Name", "meaning": "Path-qualified file name of the attached file."}, {"no": 4, "name": "User ID", "meaning": "Staffer who attached it. 8A staff record."}, {"no": 5, "name": "Attached Date", "meaning": "YYYYMMDD."}, {"no": 6, "name": "Text", "meaning": "Comments/notes."}, {"no": 7, "name": "Form Letter Attachment Flag", "meaning": "\"Y\" if the file is attached to a form letter and should be sent as part of the form-letter response."}, {"no": 8, "name": "File Name", "meaning": "User-readable file name."}]}, {"code": "6E", "name": "Form Letter / Document Library Text (Comments/Notes)", "cat": "6", "mult": "multiple per document", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "6E"}, {"no": 2, "name": "Document ID", "meaning": "Matches the associated 6A."}, {"no": 3, "name": "6E Sequence Number", "meaning": "Orders 6E records; required if Date (5) and Time (6) are NULL."}, {"no": 4, "name": "Text", "meaning": "Freeform comments/notes."}, {"no": 5, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 6, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 7, "name": "User ID", "meaning": "Staffer who entered it. 8A staff record."}]}, {"code": "6F", "name": "Form Letter / Document Library Owner Data", "cat": "6", "mult": "multiple per document", "desc": "Events (7A–7F) and recurring series (7H–7N). (There is no 7G.) The 7I–7N records are adjuncts to the 7H recurring-series definition.", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "6F"}, {"no": 2, "name": "Document ID", "meaning": "Matches the associated 6A."}, {"no": 3, "name": "Owned By", "meaning": "Owner/responsible staffer's User ID. 8A staff record."}]}, {"code": "7A", "name": "Schedule/Event Data", "cat": "7", "mult": "one per event", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7A"}, {"no": 2, "name": "Event ID", "meaning": "Unique ID for the event."}, {"no": 3, "name": "Recurrence ID", "meaning": "If part of a recurring series, matches a 7H Recurrence ID; NULL otherwise. (Each event in a series is also provided individually as 7A–7F.)"}, {"no": 4, "name": "Event Description", "meaning": "Freeform."}, {"no": 5, "name": "Contact", "meaning": "Contact info for the requester/organizer (name, phone, etc.). Must have a matching 1A."}, {"no": 6, "name": "County", "meaning": "County the event takes place in."}, {"no": 7, "name": "Organization", "meaning": "Hosting organization."}, {"no": 8, "name": "Start Date", "meaning": "YYYYMMDD."}, {"no": 9, "name": "Start Time", "meaning": "HH:MM:SS, in the event's time zone."}, {"no": 10, "name": "End Date", "meaning": "YYYYMMDD."}, {"no": 11, "name": "End Time", "meaning": "HH:MM:SS, in the event's time zone."}, {"no": 12, "name": "Time Zone", "meaning": "EST, CST, MST, PST, etc. Default EST."}, {"no": 13, "name": "Location", "meaning": "e.g. the DC or state office."}, {"no": 14, "name": "Status", "meaning": "e.g. Pending, Approved, Tentative, Declined. Non-exhaustive — examples only, no closed list."}, {"no": 15, "name": "Private Flag", "meaning": "\"Y\" if marked private."}, {"no": 16, "name": "Scheduled Date", "meaning": "When entered into the schedule YYYYMMDD."}, {"no": 17, "name": "Scheduled by", "meaning": "Entering staffer's User ID. 8A staff record."}, {"no": 18, "name": "Revision Date", "meaning": "YYYYMMDD."}, {"no": 19, "name": "Revised By", "meaning": "Last-reviser's User ID. 8A staff record."}, {"no": 24, "name": "City", "meaning": ""}, {"no": 25, "name": "State Code", "meaning": "2-letter."}, {"no": 26, "name": "Zip Code", "meaning": "XXXXX-XXXX / XXXXX / country zip."}, {"no": 27, "name": "Country", "meaning": "If international."}]}, {"code": "7B", "name": "Event Code Data", "cat": "7", "mult": "multiple per event", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7B"}, {"no": 2, "name": "Event ID", "meaning": "Matches the associated 7A."}, {"no": 3, "name": "Event Code", "meaning": "Subject/interest code. Must have a matching 8A."}]}, {"code": "7C", "name": "Event Participant Data", "cat": "7", "mult": "multiple per event", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7C"}, {"no": 2, "name": "Event ID", "meaning": "Matches the associated 7A."}, {"no": 3, "name": "Participant Type", "meaning": "STAFF or PERSON — see Participant Type Values."}, {"no": 4, "name": "Participant ID", "meaning": "If STAFF: a User ID with a matching 8A staff record. If PERSON: a Person ID with a matching 1A."}]}, {"code": "7D", "name": "Event Attachments", "cat": "7", "mult": "multiple per event", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7D"}, {"no": 2, "name": "Event ID", "meaning": "Matches the associated 7A."}, {"no": 3, "name": "Document Name", "meaning": "For files not in the library: path-qualified location."}, {"no": 4, "name": "Document ID", "meaning": "For files in the library: matches a 6A Document ID."}, {"no": 5, "name": "User ID", "meaning": "Staffer who attached it. 8A staff record."}, {"no": 6, "name": "Attached Date", "meaning": "YYYYMMDD."}, {"no": 7, "name": "Text", "meaning": "Comments/notes."}, {"no": 8, "name": "File Name", "meaning": "User-readable file name."}]}, {"code": "7E", "name": "Event Text (Comments or Notes)", "cat": "7", "mult": "multiple per event", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7E"}, {"no": 2, "name": "Event ID", "meaning": "Matches the associated 7A."}, {"no": 3, "name": "7E Sequence Number", "meaning": "Orders 7E records; required if Date (5) and Time (6) are NULL."}, {"no": 4, "name": "Text", "meaning": "Freeform comments/notes."}, {"no": 5, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 6, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 7, "name": "User ID", "meaning": "Staffer who entered it. 8A staff record."}]}, {"code": "7F", "name": "Event Associated Workflows", "cat": "7", "mult": "multiple per event", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7F"}, {"no": 2, "name": "Event ID", "meaning": "Matches the associated 7A."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches a 3A Workflow ID."}]}, {"code": "7H", "name": "Recurring Series Definition Data", "cat": "7", "mult": "one per series", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7H"}, {"no": 2, "name": "Recurrence ID", "meaning": "Unique ID for the recurring series."}, {"no": 3, "name": "Start Series Date", "meaning": "First event date YYYYMMDD."}, {"no": 4, "name": "End Series Date", "meaning": "Last event date YYYYMMDD (NULL if no end date)."}, {"no": 5, "name": "Recurrence Type", "meaning": "DAILY, WEEKLY, MONTHLY, or YEARLY."}, {"no": 6, "name": "Recurrence Interval", "meaning": "Per the Recurrence Interval Schema (see enumerations)."}]}, {"code": "7I", "name": "Recurring Series Source Data", "cat": "7", "mult": "adjunct to 7H", "desc": "Mirrors 7A's descriptive fields for a series. Fields 3, 8, 10 are Not used.", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7I"}, {"no": 2, "name": "Recurrence ID", "meaning": "Matches the associated 7H."}, {"no": 3, "name": "(Not used)", "meaning": ""}, {"no": 4, "name": "Event Description", "meaning": "Freeform description of the series."}, {"no": 5, "name": "Contact", "meaning": "Requester/organizer contact info."}, {"no": 6, "name": "County", "meaning": ""}, {"no": 7, "name": "Organization", "meaning": ""}, {"no": 8, "name": "(Not used)", "meaning": ""}, {"no": 9, "name": "Start Time", "meaning": "HH:MM:SS, series time zone."}, {"no": 10, "name": "(Not used)", "meaning": ""}, {"no": 11, "name": "End Time", "meaning": "HH:MM:SS, series time zone."}, {"no": 12, "name": "Time Zone", "meaning": "EST, CST, MST, PST, etc. Default EST."}, {"no": 13, "name": "Location", "meaning": ""}, {"no": 14, "name": "Status", "meaning": "Pending, Approved, Tentative, Declined. Non-exhaustive — examples only, no closed list."}, {"no": 15, "name": "Private Flag", "meaning": "\"Y\" if private."}, {"no": 16, "name": "Scheduled Date", "meaning": "YYYYMMDD."}, {"no": 17, "name": "Scheduled by", "meaning": "User ID. 8A staff record."}, {"no": 18, "name": "Revision Date", "meaning": "YYYYMMDD."}, {"no": 19, "name": "Revised By", "meaning": "User ID. 8A staff record."}, {"no": 24, "name": "City", "meaning": ""}, {"no": 25, "name": "State Code", "meaning": ""}, {"no": 26, "name": "Zip Code", "meaning": ""}, {"no": 27, "name": "Country", "meaning": ""}]}, {"code": "7J", "name": "Recurring Series Code Data", "cat": "7", "mult": "multiple per series", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7J"}, {"no": 2, "name": "Recurrence ID", "meaning": "Matches the associated 7H."}, {"no": 3, "name": "Event Code", "meaning": "Subject/interest code. Must have a matching 8A."}]}, {"code": "7K", "name": "Recurring Series Participant Data", "cat": "7", "mult": "multiple per series", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7K"}, {"no": 2, "name": "Recurrence ID", "meaning": "Matches the associated 7H."}, {"no": 3, "name": "Participant Type", "meaning": "STAFF or PERSON — see Participant Type Values."}, {"no": 4, "name": "Participant ID", "meaning": "If STAFF: User ID with a matching 8A staff record. If PERSON: Person ID with a matching 1A."}]}, {"code": "7L", "name": "Recurring Series Attachments", "cat": "7", "mult": "multiple per series", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7L"}, {"no": 2, "name": "Recurrence ID", "meaning": "Matches the associated 7H."}, {"no": 3, "name": "Document Name", "meaning": "For files not in the library: path-qualified location."}, {"no": 4, "name": "Document ID", "meaning": "For files in the library: matches a 6A Document ID."}, {"no": 5, "name": "User ID", "meaning": "Staffer who attached it. 8A staff record."}, {"no": 6, "name": "Attached Date", "meaning": "YYYYMMDD."}, {"no": 7, "name": "Text", "meaning": "Comments/notes."}, {"no": 8, "name": "File Name", "meaning": "User-readable file name."}]}, {"code": "7M", "name": "Recurring Series Text (Comments or Notes)", "cat": "7", "mult": "multiple per series", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7M"}, {"no": 2, "name": "Recurrence ID", "meaning": "Matches the associated 7H."}, {"no": 3, "name": "7M Sequence Number", "meaning": "Orders 7M records; required if Date (5) and Time (6) are NULL."}, {"no": 4, "name": "Text", "meaning": "Freeform comments/notes."}, {"no": 5, "name": "Date", "meaning": "YYYYMMDD."}, {"no": 6, "name": "Time", "meaning": "HH:MM:SS."}, {"no": 7, "name": "User ID", "meaning": "Staffer who entered it. 8A staff record."}]}, {"code": "7N", "name": "Recurring Series Associated Workflows", "cat": "7", "mult": "multiple per series", "desc": "", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "7N"}, {"no": 2, "name": "Recurrence ID", "meaning": "Matches the associated 7H."}, {"no": 3, "name": "Workflow ID", "meaning": "Matches a 3A Workflow ID."}]}, {"code": "8A", "name": "Code Table Data", "cat": "8", "mult": "one per code/value", "desc": "Defines every code (and staff User ID) referenced anywhere else in the format. This is the lookup hub.", "notes": [], "fields": [{"no": 1, "name": "Record Type", "meaning": "8A"}, {"no": 2, "name": "Code Type", "meaning": "The kind of code — see Code Type Values (WORK, PERS, COM, EVENT, DOC, STAFF)."}, {"no": 3, "name": "Code", "meaning": "The standard code used throughout the format (for STAFF, the staff User ID)."}, {"no": 4, "name": "Code Description", "meaning": "Description/value of the code (for STAFF, the staffer's name). If absent in source data, the code itself is repeated here."}, {"no": 5, "name": "Inactive Flag", "meaning": "\"Y\" if the code is inactive (used before, not currently assignable)."}, {"no": 6, "name": "User ID", "meaning": "Where applicable, the staffer associated with this code. 8A staff record."}]}], "edges": [{"from": "1B", "to": "1A", "key": "Person ID", "kind": "root"}, {"from": "1C", "to": "1A", "key": "Person ID", "kind": "root"}, {"from": "1D", "to": "1A", "key": "Person ID", "kind": "root"}, {"from": "1E", "to": "1A", "key": "Person ID", "kind": "root"}, {"from": "1F", "to": "1A", "key": "Person ID", "kind": "root"}, {"from": "1G", "to": "1A", "key": "Constituent ID", "kind": "root"}, {"from": "1H", "to": "1A", "key": "Constituent ID", "kind": "root"}, {"from": "2B", "to": "2A", "key": "Communication ID", "kind": "root"}, {"from": "2C", "to": "2A", "key": "Communication ID", "kind": "root"}, {"from": "2D", "to": "2A", "key": "Communication ID", "kind": "root"}, {"from": "2E", "to": "2A", "key": "Communication ID", "kind": "root"}, {"from": "3B", "to": "3A", "key": "Workflow ID", "kind": "root"}, {"from": "3D", "to": "3A", "key": "Workflow ID", "kind": "root"}, {"from": "3E", "to": "3A", "key": "Workflow ID", "kind": "root"}, {"from": "3F", "to": "3A", "key": "Workflow ID", "kind": "root"}, {"from": "3G", "to": "3A", "key": "Casework ID", "kind": "root"}, {"from": "3L", "to": "3A", "key": "Workflow ID", "kind": "root"}, {"from": "5B", "to": "5A", "key": "Household ID", "kind": "root"}, {"from": "5C", "to": "5A", "key": "Household ID", "kind": "root"}, {"from": "5D", "to": "5A", "key": "Household ID", "kind": "root"}, {"from": "6B", "to": "6A", "key": "Document ID", "kind": "root"}, {"from": "6C", "to": "6A", "key": "Document ID", "kind": "root"}, {"from": "6D", "to": "6A", "key": "Document ID", "kind": "root"}, {"from": "6E", "to": "6A", "key": "Document ID", "kind": "root"}, {"from": "6F", "to": "6A", "key": "Document ID", "kind": "root"}, {"from": "7B", "to": "7A", "key": "Event ID", "kind": "root"}, {"from": "7C", "to": "7A", "key": "Event ID", "kind": "root"}, {"from": "7D", "to": "7A", "key": "Event ID", "kind": "root"}, {"from": "7E", "to": "7A", "key": "Event ID", "kind": "root"}, {"from": "7F", "to": "7A", "key": "Event ID", "kind": "root"}, {"from": "7I", "to": "7H", "key": "Recurrence ID", "kind": "root"}, {"from": "7J", "to": "7H", "key": "Recurrence ID", "kind": "root"}, {"from": "7K", "to": "7H", "key": "Recurrence ID", "kind": "root"}, {"from": "7L", "to": "7H", "key": "Recurrence ID", "kind": "root"}, {"from": "7M", "to": "7H", "key": "Recurrence ID", "kind": "root"}, {"from": "7N", "to": "7H", "key": "Recurrence ID", "kind": "root"}, {"from": "2A", "to": "1A", "key": "Person ID", "kind": "fk"}, {"from": "2A", "to": "3A", "key": "Workflow ID", "kind": "fk"}, {"from": "2A", "to": "5A", "key": "Household ID", "kind": "fk"}, {"from": "2C", "to": "6A", "key": "Document ID", "kind": "fk"}, {"from": "3A", "to": "1A", "key": "Person ID", "kind": "fk"}, {"from": "3E", "to": "1A", "key": "Party ID", "kind": "fk"}, {"from": "3F", "to": "6A", "key": "Document ID", "kind": "fk"}, {"from": "3G", "to": "1A", "key": "Constituent ID", "kind": "fk"}, {"from": "1F", "to": "6A", "key": "Document ID", "kind": "fk"}, {"from": "5B", "to": "1A", "key": "Person ID", "kind": "fk"}, {"from": "5C", "to": "6A", "key": "Document ID", "kind": "fk"}, {"from": "7A", "to": "1A", "key": "Contact · Person ID", "kind": "fk"}, {"from": "7A", "to": "7H", "key": "Recurrence ID", "kind": "fk"}, {"from": "7C", "to": "1A", "key": "Participant · Person ID", "kind": "fk"}, {"from": "7D", "to": "6A", "key": "Document ID", "kind": "fk"}, {"from": "7F", "to": "3A", "key": "Workflow ID", "kind": "fk"}, {"from": "7K", "to": "1A", "key": "Participant · Person ID", "kind": "fk"}, {"from": "7L", "to": "6A", "key": "Document ID", "kind": "fk"}, {"from": "7N", "to": "3A", "key": "Workflow ID", "kind": "fk"}, {"from": "1C", "to": "8A", "key": "PERS / WORK code", "kind": "code"}, {"from": "2B", "to": "8A", "key": "COM code", "kind": "code"}, {"from": "3B", "to": "8A", "key": "WORK code", "kind": "code"}, {"from": "6C", "to": "8A", "key": "doc / work / com code", "kind": "code"}, {"from": "7B", "to": "8A", "key": "EVENT code", "kind": "code"}, {"from": "7J", "to": "8A", "key": "EVENT code", "kind": "code"}, {"from": "1D", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "1F", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "2A", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "2D", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "3A", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "3D", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "3F", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "5C", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "5D", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "6A", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "6D", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "6E", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "6F", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7A", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7C", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7D", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7E", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7I", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7K", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7L", "to": "8A", "key": "staff User ID", "kind": "staff"}, {"from": "7M", "to": "8A", "key": "staff User ID", "kind": "staff"}]};
+/* ---------- helpers ---------- */
+const cats = DATA.categories, records = DATA.records, edges = DATA.edges;
+const recByCode = {}; records.forEach(r=>recByCode[r.code]=r);
+function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}
+function catHead(c){return cats[c].head;}
+const $ = s=>document.querySelector(s);
+const app=$('#app'), canvas=$('#canvas'), tablesEl=$('#tables'), regionsEl=$('#regions'), edgesSvg=$('#edges');
+
+/* ---------- layout ---------- */
+const TW=240,HH=36,RH=22,BP=8,TG=36,CG=46,COLMAX=900,CATPAD=36,CATGAP=92,TITLEH=64,ROWBUDGET=2600;
+const catOrder=Object.keys(cats).sort((a,b)=>+a-+b);
+const byCat={}; catOrder.forEach(c=>byCat[c]=[]);
+records.forEach(r=>byCat[r.cat].push(r));
+const tH=r=>HH+r.fields.length*RH+BP;
+
+const blocks=catOrder.map(c=>{
+  const list=byCat[c]; let col=0,colY=TITLEH,ncols=1,maxBottom=TITLEH; const pos={};
+  list.forEach(r=>{const h=tH(r);
+    if(colY!==TITLEH && colY+h>COLMAX){col++;colY=TITLEH;}
+    pos[r.code]={x:col*(TW+CG),y:colY,w:TW,h}; colY+=h+TG;
+    maxBottom=Math.max(maxBottom,colY-TG); ncols=Math.max(ncols,col+1);});
+  return {cat:c, w:ncols*(TW+CG)-CG+CATPAD*2, h:maxBottom+CATPAD, pos};
+});
+let rx=0,ry=0,rowMaxH=0;
+blocks.forEach(b=>{ if(rx>0 && rx+b.w>ROWBUDGET){ry+=rowMaxH+CATGAP;rx=0;rowMaxH=0;}
+  b.X=rx;b.Y=ry; rx+=b.w+CATGAP; rowMaxH=Math.max(rowMaxH,b.h);});
+const layout={}; let WW=0,WH=0;
+blocks.forEach(b=>{ WW=Math.max(WW,b.X+b.w); WH=Math.max(WH,b.Y+b.h);
+  Object.keys(b.pos).forEach(code=>{const p=b.pos[code];
+    layout[code]={x:b.X+CATPAD+p.x,y:b.Y+p.y,w:p.w,h:p.h,cat:b.cat};});});
+canvas.style.width=WW+'px'; canvas.style.height=WH+'px';
+edgesSvg.setAttribute('width',WW); edgesSvg.setAttribute('height',WH);
+
+/* ---------- render regions ---------- */
+blocks.forEach(b=>{
+  const head=catHead(b.cat);
+  const d=document.createElement('div'); d.className='region';
+  d.style.left=b.X+'px'; d.style.top=b.Y+'px'; d.style.width=b.w+'px'; d.style.height=b.h+'px';
+  d.style.background=hexA(head,.06); d.style.borderColor=hexA(head,.45);
+  d.innerHTML=`<div class="region-title" style="color:${head}">${cats[b.cat].name}</div>
+     <div class="region-sub" style="color:${head}">Category ${b.cat} · ${byCat[b.cat].length} record types</div>`;
+  regionsEl.appendChild(d);
+});
+
+/* ---------- render tables ---------- */
+records.forEach(r=>{
+  const L=layout[r.code], head=catHead(r.cat);
+  const t=document.createElement('div'); t.className='table'; t.id='t-'+r.code;
+  t.style.left=L.x+'px'; t.style.top=L.y+'px';
+  let rows='';
+  r.fields.forEach(f=>{ rows+=`<li class="field" data-code="${r.code}" data-no="${f.no}"><span class="fno">${f.no}</span><span class="fnm">${f.name}</span></li>`; });
+  t.innerHTML=`<div class="thead" data-code="${r.code}" style="background:${head}">
+      <span class="code">${r.code}</span><span class="nm">${r.name}</span></div>
+      <ul class="fields">${rows}</ul>`;
+  tablesEl.appendChild(t);
+});
+
+/* ---------- datalist ---------- */
+$('#reclist').innerHTML=records.map(r=>`<option value="${r.code} — ${r.name}">`).join('');
+
+/* ---------- legend ---------- */
+$('#legrows').innerHTML=catOrder.map(c=>
+  `<span class="leg" data-cat="${c}"><span class="sw" style="background:${catHead(c)}"></span>${cats[c].name}</span>`).join('');
+$('#legrows').onclick=e=>{const l=e.target.closest('.leg'); if(l) fitCat(l.dataset.cat);};
+
+/* ---------- pan / zoom ---------- */
+let s=1,tx=0,ty=0;
+function apply(){canvas.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;}
+function animate(on){canvas.classList.toggle('animate',on);}
+function fit(pad){pad=pad||90; const aw=app.clientWidth,ah=app.clientHeight;
+  s=Math.min((aw-pad*2)/WW,(ah-pad*2)/WH,1.1); s=Math.max(s,.05);
+  tx=(aw-WW*s)/2; ty=(ah-WH*s)/2; animate(true); apply(); setTimeout(()=>animate(false),480);}
+function fitCat(c){const b=blocks.find(x=>x.cat===c); deselect();
+  const aw=app.clientWidth,ah=app.clientHeight; s=Math.min((aw-120)/b.w,(ah-160)/b.h,1.0);
+  tx=aw/2-(b.X+b.w/2)*s; ty=ah/2-(b.Y+b.h/2)*s; animate(true);apply();setTimeout(()=>animate(false),480);}
+function centerOn(code,ns){const L=layout[code]; const aw=app.clientWidth,ah=app.clientHeight;
+  s=ns||Math.min(Math.max(s,.95),1.25); const cx=L.x+L.w/2, cy=L.y+L.h/2;
+  tx=aw/2-cx*s; ty=ah/2-cy*s; animate(true);apply();setTimeout(()=>animate(false),480);}
+
+app.addEventListener('wheel',e=>{e.preventDefault();
+  const r=app.getBoundingClientRect(); const mx=e.clientX-r.left,my=e.clientY-r.top;
+  const f=Math.exp(-e.deltaY*0.0015); let ns=Math.min(2.2,Math.max(.05,s*f));
+  tx=mx-(mx-tx)*(ns/s); ty=my-(my-ty)*(ns/s); s=ns; apply();},{passive:false});
+
+let panning=false,moved=false,sx,sy,stx,sty;
+app.addEventListener('pointerdown',e=>{
+  if(e.target.closest('.table')||e.target.closest('#panel')||e.target.closest('#toolbar')||e.target.closest('#legend')) return;
+  panning=true;moved=false;sx=e.clientX;sy=e.clientY;stx=tx;sty=ty;app.classList.add('panning');app.setPointerCapture(e.pointerId);
+});
+app.addEventListener('pointermove',e=>{ if(!panning)return;
+  const dx=e.clientX-sx,dy=e.clientY-sy; if(Math.abs(dx)+Math.abs(dy)>4)moved=true;
+  tx=stx+dx; ty=sty+dy; apply();});
+app.addEventListener('pointerup',e=>{ if(panning){panning=false;app.classList.remove('panning');
+  if(!moved) deselect();}});
+
+$('#btn-fit').onclick=()=>{deselect();fit();};
+$('#btn-zin').onclick=()=>zoomBtn(1.25);
+$('#btn-zout').onclick=()=>zoomBtn(.8);
+function zoomBtn(f){const aw=app.clientWidth/2,ah=app.clientHeight/2;let ns=Math.min(2.2,Math.max(.05,s*f));
+  tx=aw-(aw-tx)*(ns/s);ty=ah-(ah-ty)*(ns/s);s=ns;animate(true);apply();setTimeout(()=>animate(false),300);}
+
+/* ---------- selection + edges ---------- */
+let selCode=null;
+const NS='http://www.w3.org/2000/svg';
+/* orthogonal router: grid + A* with turn penalty, routing around tables */
+function buildGrid(){
+  const target=48000; GS=Math.max(11,Math.min(18,Math.round(Math.sqrt(WW*WH/target))));
+  GC=Math.ceil(WW/GS)+1; GR=Math.ceil(WH/GS)+1; OCC=new Uint8Array(GC*GR);
+  const PAD=6;
+  records.forEach(r=>{const L=layout[r.code];
+    const c0=Math.max(0,Math.floor((L.x-PAD)/GS)),c1=Math.min(GC-1,Math.floor((L.x+L.w+PAD)/GS));
+    const r0=Math.max(0,Math.floor((L.y-PAD)/GS)),r1=Math.min(GR-1,Math.floor((L.y+L.h+PAD)/GS));
+    for(let rr=r0;rr<=r1;rr++)for(let cc=c0;cc<=c1;cc++)OCC[rr*GC+cc]=1;});
+}
+let GS,GC,GR,OCC; buildGrid();
+const gcell=(x,y)=>[Math.max(0,Math.min(GC-1,Math.floor(x/GS))),Math.max(0,Math.min(GR-1,Math.floor(y/GS)))];
+const gctr=(c,r)=>[(c+0.5)*GS,(r+0.5)*GS];
+const gsnap=v=>(Math.floor(v/GS)+0.5)*GS;
+let _g=new Float32Array(0),_gen=new Uint32Array(0),_came=new Int32Array(0),_tok=0;
+const _D=[[1,0],[-1,0],[0,1],[0,-1]];
+function astar(sc,sr,gc,gr){
+  const n=GC*GR*5; if(_g.length<n){_g=new Float32Array(n);_gen=new Uint32Array(n);_came=new Int32Array(n);}
+  _tok++; const tok=_tok, goal=gr*GC+gc, TURN=GS*4;
+  const heap=[];
+  const up=i=>{while(i>0){const p=(i-1)>>1; if(heap[p][0]<=heap[i][0])break;[heap[p],heap[i]]=[heap[i],heap[p]];i=p;}};
+  const down=()=>{let i=0;for(;;){let l=2*i+1,r=2*i+2,m=i;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m;}};
+  const push=(f,node,g)=>{heap.push([f,node,g]);up(heap.length-1);};
+  const pop=()=>{const t=heap[0],l=heap.pop();if(heap.length){heap[0]=l;down();}return t;};
+  const H=(c,r)=>(Math.abs(c-gc)+Math.abs(r-gr))*GS;
+  const s=sr*GC+sc, k0=s*5+4; _g[k0]=0;_gen[k0]=tok;_came[k0]=-1; push(H(sc,sr),k0,0);
+  while(heap.length){const t=pop(); const node=t[1], g=t[2]; if(g>_g[node])continue;
+    const dir=node%5, idx=(node-dir)/5;
+    if(idx===goal){const pts=[];let nn=node;
+      while(nn!==-1){const dd=nn%5,ii=(nn-dd)/5;pts.push(gctr(ii%GC,(ii/GC)|0));nn=_came[nn];} return pts.reverse();}
+    const cr=(idx/GC)|0, cc=idx-cr*GC;
+    for(let d=0;d<4;d++){const nc=cc+_D[d][0],nr=cr+_D[d][1]; if(nc<0||nr<0||nc>=GC||nr>=GR)continue;
+      const ni=nr*GC+nc; if(OCC[ni]&&ni!==goal)continue;
+      const ng=g+GS+((dir<4&&dir!==d)?TURN:0), nk=ni*5+d;
+      if(_gen[nk]!==tok||ng<_g[nk]){_g[nk]=ng;_gen[nk]=tok;_came[nk]=node;push(ng+H(nc,nr),nk,ng);}}
+  }
+  return null;
+}
+function freeStub(px,py,nx,ny){let x=px+nx*GS,y=py+ny*GS;
+  for(let k=0;k<10;k++){const a=gcell(x,y); if(!OCC[a[1]*GC+a[0]])return a; x+=nx*GS;y+=ny*GS;}
+  return gcell(x,y);}
+function sideOf(L,tx,ty){const cx=L.x+L.w/2,cy=L.y+L.h/2,dx=tx-cx,dy=ty-cy;
+  return Math.abs(dx)>=Math.abs(dy)?(dx>0?'E':'W'):(dy>0?'S':'N');}
+function portOf(L,side,t){
+  if(side==='E')return{px:L.x+L.w,py:gsnap(L.y+t*L.h),nx:1,ny:0};
+  if(side==='W')return{px:L.x,py:gsnap(L.y+t*L.h),nx:-1,ny:0};
+  if(side==='N')return{px:gsnap(L.x+t*L.w),py:L.y,nx:0,ny:-1};
+  return{px:gsnap(L.x+t*L.w),py:L.y+L.h,nx:0,ny:1};}
+function simplify(p){if(p.length<3)return p;const o=[p[0]];
+  for(let i=1;i<p.length-1;i++){const a=o[o.length-1],b=p[i],c=p[i+1];
+    const cl=(Math.abs(a[0]-b[0])<0.5&&Math.abs(b[0]-c[0])<0.5)||(Math.abs(a[1]-b[1])<0.5&&Math.abs(b[1]-c[1])<0.5);
+    if(!cl)o.push(b);} o.push(p[p.length-1]); return o;}
+function clearEdges(){while(edgesSvg.firstChild)edgesSvg.removeChild(edgesSvg.firstChild);}
+function neighbors(code){const out=[];edges.forEach(e=>{
+  if(e.from===code)out.push({other:e.to,key:e.key,kind:e.kind,dir:'out'});
+  else if(e.to===code)out.push({other:e.from,key:e.key,kind:e.kind,dir:'in'});});return out;}
+
+function drawEdges(code){clearEdges(); const L=layout[code]; const ns=neighbors(code);
+  const bySide={}; ns.forEach(n=>{const M=layout[n.other]; n._side=sideOf(L,M.x+M.w/2,M.y+M.h/2);(bySide[n._side]=bySide[n._side]||[]).push(n);});
+  Object.keys(bySide).forEach(side=>{const arr=bySide[side];
+    arr.sort((a,b)=>{const A=layout[a.other],B=layout[b.other]; return (side==='N'||side==='S')?(A.x-B.x):(A.y-B.y);});
+    arr.forEach((n,i)=>{n._t=arr.length===1?0.5:0.16+0.68*(i/(arr.length-1));});});
+  ns.forEach(n=>{const M=layout[n.other]; const col=catHead(recByCode[n.other].cat);
+    const pS=portOf(L,n._side,n._t); const mSide=sideOf(M,L.x+L.w/2,L.y+L.h/2); const pM=portOf(M,mSide,0.5);
+    const a=freeStub(pS.px,pS.py,pS.nx,pS.ny), b=freeStub(pM.px,pM.py,pM.nx,pM.ny);
+    const path=astar(a[0],a[1],b[0],b[1]);
+    let pts=path?[[pS.px,pS.py]].concat(path).concat([[pM.px,pM.py]]):[[pS.px,pS.py],[pM.px,pM.py]];
+    pts=simplify(pts);
+    const d='M'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' L');
+    const pe=document.createElementNS(NS,'path'); pe.setAttribute('d',d);
+    pe.setAttribute('class','edge'+(n.kind==='staff'?' staff':'')); pe.setAttribute('stroke',col); edgesSvg.appendChild(pe);
+    const dot=document.createElementNS(NS,'circle'); dot.setAttribute('cx',pM.px);dot.setAttribute('cy',pM.py);dot.setAttribute('r',4);dot.setAttribute('fill',col); edgesSvg.appendChild(dot);
+    let bi=0,bl=-1; for(let i=0;i<pts.length-1;i++){const dl=Math.abs(pts[i][0]-pts[i+1][0])+Math.abs(pts[i][1]-pts[i+1][1]); if(dl>bl){bl=dl;bi=i;}}
+    const mx=(pts[bi][0]+pts[bi+1][0])/2,my=(pts[bi][1]+pts[bi+1][1])/2;
+    const tEl=document.createElementNS(NS,'text'); tEl.setAttribute('x',mx);tEl.setAttribute('y',my-4);
+    tEl.setAttribute('text-anchor','middle');tEl.setAttribute('class','elabel');tEl.setAttribute('fill',col);tEl.textContent=n.key; edgesSvg.appendChild(tEl);
+  });
+}
+function selectTable(code,center){
+  selCode=code; app.classList.add('has-sel');
+  document.querySelectorAll('.table').forEach(t=>t.classList.remove('sel','conn'));
+  document.querySelectorAll('.field.active').forEach(f=>f.classList.remove('active'));
+  const conn=new Set(neighbors(code).map(n=>n.other));
+  document.getElementById('t-'+code).classList.add('sel');
+  conn.forEach(c=>document.getElementById('t-'+c).classList.add('conn'));
+  drawEdges(code); showTable(code);
+  if(center) centerOn(code);
+}
+function deselect(){selCode=null;app.classList.remove('has-sel');clearEdges();
+  document.querySelectorAll('.table').forEach(t=>t.classList.remove('sel','conn'));
+  document.querySelectorAll('.field.active').forEach(f=>f.classList.remove('active'));
+  showHome();}
+
+/* ---------- clicks ---------- */
+tablesEl.addEventListener('click',e=>{
+  const head=e.target.closest('.thead');
+  if(head){selectTable(head.dataset.code,true);return;}
+  const fld=e.target.closest('.field');
+  if(fld){const code=fld.dataset.code, no=+fld.dataset.no;
+    if(selCode!==code) selectTable(code,true);
+    document.querySelectorAll('.field.active').forEach(f=>f.classList.remove('active'));
+    fld.classList.add('active'); showField(code,no);}
+});
+
+/* ---------- panel ---------- */
+const phead=$('#phead'), pbody=$('#pbody');
+function badges(m,name){const b=[];const add=(c,t)=>{if(!b.some(x=>x[1]===t))b.push([c,t]);};
+  if(/YYYYMMDD/.test(m))add('b-date','Date · YYYYMMDD');
+  if(/HH:MM:SS/.test(m))add('b-time','Time · HH:MM:SS');
+  if(/Non-exhaustive/i.test(m))add('b-open','Open value set');
+  if(/8A/.test(m))add('b-fk','→ 8A code / staff');
+  if(/1A/.test(m))add('b-fk','→ 1A person');
+  if(/6A/.test(m))add('b-fk','→ 6A document');
+  if(/5A/.test(m))add('b-fk','→ 5A household');
+  if(/3A/.test(m))add('b-fk','→ 3A workflow');
+  if(/2A/.test(m))add('b-fk','→ 2A communication');
+  if(/7H/.test(m))add('b-fk','→ 7H series');
+  if(/unique ID/i.test(m))add('b-key','Identifier (key)');
+  if(/from the table below|see [A-Z]|Values/.test(m))add('b-enum','Enumerated');
+  if(/NULL/.test(m))add('b-null','Nullable');
+  if(/"Y"/.test(m)||/Flag/.test(name))add('b-flag','Flag (Y / NULL)');
+  return b;}
+function tag(code){const r=recByCode[code];return `<span class="ptag" style="background:${catHead(r.cat)}">${code}</span>`;}
+function showHome(){
+  phead.innerHTML=`<h2 style="margin-top:2px">SCDIF Data Model</h2>
+    <div class="pcat">Senate CSS Data Interchange Format</div>`;
+  let cl=catOrder.map(c=>`<span class="chip" data-cat="${c}"><span class="dot" style="background:${catHead(c)}"></span>${cats[c].name} <span class="k">${byCat[c].length}</span></span>`).join('');
+  pbody.innerHTML=`<p class="mut">An interactive map of the ${records.length} SCDIF record types and the IDs that link them.</p>
+    <div class="section-t">How to use</div>
+    <p>• <b>Click a table</b> to center it and reveal every record it connects to.<br>
+       • <b>Click a field</b> to read its definition and constraints.<br>
+       • <b>Scroll</b> to zoom, <b>drag</b> to pan, <b>Overview</b> to see all categories.</p>
+    <div class="section-t">Categories</div>${cl}
+    <div class="section-t">Reading the links</div>
+    <p class="mut">Solid lines are ID references (the label names the linking key). Dashed lines are staff <span class="kbd">User ID</span> references into the <b>8A</b> code table.</p>`;
+  pbody.querySelector('.section-t')&&pbody.addEventListener;
+  pbody.querySelectorAll('.chip[data-cat]').forEach(ch=>ch.onclick=()=>fitCat(ch.dataset.cat));
+}
+function showTable(code){const r=recByCode[code];
+  phead.innerHTML=`${tag(code)} <span class="ptag" style="background:#eef1f5;color:#5b6675;margin-left:6px">Record</span>
+    <h2>${r.name}</h2><div class="pcat" style="color:${catHead(r.cat)}">${cats[r.cat].name}${r.mult?' · '+r.mult:''}</div>`;
+  const ns=neighbors(code);
+  const grp={};ns.forEach(n=>{(grp[n.key]=grp[n.key]||[]).push(n.other);});
+  let links=Object.keys(grp).map(k=>grp[k].map(o=>
+    `<span class="chip" data-go="${o}"><span class="dot" style="background:${catHead(recByCode[o].cat)}"></span>${o} <span class="k">${k}</span></span>`).join('')).join('');
+  let notes=r.notes&&r.notes.length?`<div class="note">${r.notes.join('<br>')}</div>`:'';
+  let flds=r.fields.map(f=>`<li class="field" data-code="${code}" data-no="${f.no}" style="border-top:1px solid #eef1f5"><span class="fno">${f.no}</span><span class="fnm">${f.name}</span></li>`).join('');
+  pbody.innerHTML=`${r.desc?`<p class="mut">${r.desc}</p>`:''}${notes}
+    <div class="section-t">Connects to (${ns.length})</div>${links||'<span class="mut">No links.</span>'}
+    <div class="section-t">Fields (${r.fields.length}) — click for detail</div>
+    <ul class="fields" style="border:1px solid var(--line);border-radius:9px;overflow:hidden">${flds}</ul>`;
+  pbody.querySelectorAll('.chip[data-go]').forEach(ch=>ch.onclick=()=>selectTable(ch.dataset.go,true));
+  pbody.querySelectorAll('.field').forEach(li=>li.onclick=()=>{selectField(code,+li.dataset.no);});
+}
+function selectField(code,no){selectTable(code,true);
+  document.querySelectorAll('.field.active').forEach(f=>f.classList.remove('active'));
+  const el=document.querySelector(`#t-${code} .field[data-no="${no}"]`); if(el)el.classList.add('active');
+  showField(code,no);}
+function showField(code,no){const r=recByCode[code];const f=r.fields.find(x=>x.no===no);
+  phead.innerHTML=`${tag(code)} <span class="mut" style="font-size:12px;font-weight:700"> ${r.code} · ${r.name}</span>
+    <h2>${f.name}</h2><div class="pcat">Field ${f.no} of ${r.fields.length}</div>`;
+  const bs=badges(f.meaning,f.name).map(b=>`<span class="badge ${b[0]}">${b[1]}</span>`).join('');
+  pbody.innerHTML=`<div class="backlink" id="bk">‹ Back to ${r.code} record</div>
+    <div class="section-t">Definition</div>
+    <div class="fielddef">${f.meaning||'<span class="mut">(no description)</span>'}</div>
+    ${bs?`<div class="section-t">Properties</div>${bs}`:''}`;
+  $('#bk').onclick=()=>selectTable(code,false);
+}
+
+/* ---------- search ---------- */
+$('#search').addEventListener('change',e=>{
+  const v=e.target.value.trim().toUpperCase(); if(!v)return;
+  let r=records.find(x=>x.code===v.split(' ')[0])||records.find(x=>x.name.toUpperCase().includes(v))||records.find(x=>(x.code+' — '+x.name).toUpperCase()===v);
+  if(r){selectTable(r.code,true);e.target.value=r.code+' — '+r.name;}
+});
+window.addEventListener('keydown',e=>{if(e.key==='Escape')deselect();});
+
+/* ---------- go ---------- */
+showHome(); fit();
+window.addEventListener('resize',()=>{if(!selCode)fit();});
+</script>
+</body>
+</html>
